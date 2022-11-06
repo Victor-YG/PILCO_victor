@@ -5,15 +5,15 @@ float_type = config.default_float()
 
 
 def rollout(env, pilco, timesteps, verbose=True, random=False, SUBS=1, render=False):
-        X = []; Y = [];
-        x = env.reset()
+        X = []; Y = []
+        x, _ = env.reset()
         ep_return_full = 0
         ep_return_sampled = 0
         for timestep in range(timesteps):
             if render: env.render()
             u = policy(env, pilco, x, random)
             for i in range(SUBS):
-                x_new, r, done, _ = env.step(u)
+                x_new, r, done, _, __ = env.step(u)
                 ep_return_full += r
                 if done: break
                 if render: env.render()

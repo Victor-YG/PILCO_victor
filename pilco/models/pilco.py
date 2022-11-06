@@ -56,7 +56,7 @@ class PILCO(gpflow.models.BayesianModel):
         self.mgpr.optimize(restarts=restarts)
         # Print the resulting model parameters
         # ToDo: only do this if verbosity is large enough
-        lengthscales = {}; variances = {}; noises = {};
+        lengthscales = {}; variances = {}; noises = {}
         i = 0
         for model in self.mgpr.models:
             lengthscales['GP' + str(i)] = model.kernel.lengthscales.numpy()
@@ -64,7 +64,7 @@ class PILCO(gpflow.models.BayesianModel):
             noises['GP' + str(i)] = np.array([model.likelihood.variance.numpy()])
             i += 1
         print('-----Learned models------')
-        pd.set_option('precision', 3)
+        pd.set_option('display.precision', 3)
         print('---Lengthscales---')
         print(pd.DataFrame(data=lengthscales))
         print('---Variances---')

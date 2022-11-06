@@ -32,7 +32,7 @@ pilco = PILCO((X, Y), controller=controller, horizon=40)
 for rollouts in range(3):
     pilco.optimize_models()
     pilco.optimize_policy()
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     X_new, Y_new, _, _ = rollout(env=env, pilco=pilco, timesteps=100, render=True)
     # Update dataset
     X = np.vstack((X, X_new)); Y = np.vstack((Y, Y_new))
