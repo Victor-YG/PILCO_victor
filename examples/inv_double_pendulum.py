@@ -17,7 +17,7 @@ np.random.seed(0)
 
 class DoublePendWrapper():
     def __init__(self):
-        self.env = gym.make('InvertedDoublePendulum-v2').env
+        self.env = gym.make('InvertedDoublePendulum-v4', render_mode="rgb_array").env
         self.action_space = self.env.action_space
         self.observation_space = self.env.observation_space
 
@@ -28,17 +28,20 @@ class DoublePendWrapper():
         return s_new
 
     def step(self, action):
-        ob, r, done, _ = self.env.step(action)
+        ob, r, done, _, __ = self.env.step(action)
         if np.abs(ob[0])> 0.90 or np.abs(ob[-3]) > 0.15 or  np.abs(ob[-2]) > 0.15 or np.abs(ob[-1]) > 0.15:
             done = True
-        return self.state_trans(ob), r, done, {}
+        return self.state_trans(ob), r, done, _, __
 
     def reset(self):
-        ob =  self.env.reset()
-        return self.state_trans(ob)
+        ob, _ =  self.env.reset()
+        return (self.state_trans(ob), _)
 
     def render(self):
-        self.env.render()
+        return self.env.render()
+
+    def close(self):
+        return self.env.close()
 
 
 if __name__=='__main__':

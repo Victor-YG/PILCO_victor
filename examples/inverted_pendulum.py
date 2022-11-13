@@ -10,7 +10,8 @@ np.random.seed(0)
 
 from utils import rollout, policy
 
-env = gym.make('InvertedPendulum-v2')
+env = gym.make('InvertedPendulum-v4', render_mode="rgb_array")
+
 # Initial random rollouts to generate a dataset
 X,Y, _, _ = rollout(env=env, pilco=None, random=True, timesteps=40, render=True)
 for i in range(1,5):
