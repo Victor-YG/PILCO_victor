@@ -14,7 +14,7 @@ from gpflow import set_trainable
 
 class PILCO(gpflow.models.BayesianModel):
     def __init__(self, data, num_induced_points=None, horizon=30, controller=None,
-                reward=None, m_init=None, S_init=None, name=None):
+                reward=None, m_init=None, S_init=None, name=None, expert=None):
         super(PILCO, self).__init__(name)
         if num_induced_points is None:
             self.mgpr = MGPR(data)
@@ -28,6 +28,9 @@ class PILCO(gpflow.models.BayesianModel):
             self.controller = controllers.LinearController(self.state_dim, self.control_dim)
         else:
             self.controller = controller
+
+        # set expert
+        self.expert_controller = expert
 
         if reward is None:
             self.reward = rewards.ExponentialReward(self.state_dim)
@@ -112,6 +115,8 @@ class PILCO(gpflow.models.BayesianModel):
         for param in mgpr_trainable_params:
             set_trainable(param, True)
 
+        return best_reward
+
     def compute_action(self, x_m):
         return self.controller.compute_action(x_m, tf.zeros([self.state_dim, self.state_dim], float_type))[0]
 
@@ -120,23 +125,28 @@ class PILCO(gpflow.models.BayesianModel):
             tf.constant(0, tf.int32),
             m_x,
             s_x,
+            tf.constant([[0]], float_type),
             tf.constant([[0]], float_type)
         ]
 
-        _, m_x, s_x, reward = tf.while_loop(
+        _, m_x, s_x, diff, reward = tf.while_loop(
             # Termination condition
-            lambda j, m_x, s_x, reward: j < n,
+            lambda j, m_x, s_x, diff, reward: j < n,
             # Body function
-            lambda j, m_x, s_x, reward: (
+            lambda j, m_x, s_x, diff, reward: (
                 j + 1,
-                *self.propagate(m_x, s_x),
-                tf.add(reward, self.reward.compute_reward(m_x, s_x)[0])
+                *self.propagate(m_x, s_x, diff),
+                tf.add(reward, self.reward.compute_reward(m_x, s_x, diff)[0])
             ), loop_vars
         )
         return m_x, s_x, reward
 
-    def propagate(self, m_x, s_x):
+    def propagate(self, m_x, s_x, diff):
+        # diff = tf.zeros([1, 1])
         m_u, s_u, c_xu = self.controller.compute_action(m_x, s_x)
+        if self.expert_controller is not None:
+            m_e, s_e, c_xe = self.expert_controller.compute_action(m_x, s_x)
+            diff = tf.reduce_sum(tf.subtract( m_e - m_u))
 
         m = tf.concat([m_x, m_u], axis=1)
         s1 = tf.concat([s_x, s_x@c_xu], axis=1)
@@ -150,7 +160,7 @@ class PILCO(gpflow.models.BayesianModel):
 
         # While-loop requires the shapes of the outputs to be fixed
         M_x.set_shape([1, self.state_dim]); S_x.set_shape([self.state_dim, self.state_dim])
-        return M_x, S_x
+        return M_x, S_x, diff
 
     def compute_reward(self):
         return -self.training_loss()

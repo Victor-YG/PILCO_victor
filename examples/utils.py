@@ -1,6 +1,5 @@
 import time
 import numpy as np
-import pygame
 from gpflow import config
 from gym import make
 float_type = config.default_float()

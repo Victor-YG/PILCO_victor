@@ -16,7 +16,7 @@ class ExponentialReward(Module):
         else:
             self.t = Parameter(np.zeros((1, state_dim)), trainable=False)
 
-    def compute_reward(self, m, s):
+    def compute_reward(self, m, s, diff=0):
         '''
         Reward function, calculating mean and variance of rewards, given
         mean and variance of state distribution, along with the target State
@@ -48,17 +48,17 @@ class ExponentialReward(Module):
         sR = r2 - muR @ muR
         muR.set_shape([1, 1])
         sR.set_shape([1, 1])
-        return muR, sR
+        return muR - diff, sR
 
 class LinearReward(Module):
     def __init__(self, state_dim, W):
         self.state_dim = state_dim
         self.W = Parameter(np.reshape(W, (state_dim, 1)), trainable=False)
 
-    def compute_reward(self, m, s):
+    def compute_reward(self, m, s, diff=0):
         muR = tf.reshape(m, (1, self.state_dim)) @ self.W
         sR = tf.transpose(self.W) @ s @ self.W
-        return muR, sR
+        return muR - diff, sR
 
 
 class CombinedRewards(Module):
@@ -70,11 +70,11 @@ class CombinedRewards(Module):
         else:
             self.coefs = Parameter(np.ones(len(rewards)), dtype=float_type, trainable=False)
 
-    def compute_reward(self, m, s):
+    def compute_reward(self, m, s, diff=0):
         total_output_mean = 0
         total_output_covariance = 0
         for reward, coef in zip(self.base_rewards, self.coefs):
-            output_mean, output_covariance = reward.compute_reward(m, s)
+            output_mean, output_covariance = reward.compute_reward(m, s, diff)
             total_output_mean += coef * output_mean
             total_output_covariance += coef**2 * output_covariance
 
