@@ -34,7 +34,7 @@ class DoublePendWrapper():
         return self.state_trans(ob), r, done, {}
 
     def reset(self):
-        ob, _ =  self.env.reset()
+        ob = self.env.reset()
         return self.state_trans(ob)
 
     def render(self):
