@@ -10,7 +10,8 @@ from utils import rollout, policy
 seed = 0
 np.random.seed(seed)
 name = "swimmer_new" + str(seed)
-env = gym.make('Swimmer-v2').env
+# env = gym.make('Swimmer-v2').env
+env = gym.make('Swimmer-v4', render_mode="rgb_array")
 state_dim = 8
 control_dim = 2
 SUBS = 5
@@ -77,7 +78,7 @@ for rollouts in range(N):
 
     cur_rew = 0
     for t in range(0,len(X_new)):
-        cur_rew += Rew.compute_reward(X_new[t, 0:state_dim, None].transpose(), 0.0001 * np.eye(state_dim))[0]
+        cur_rew += combined_reward.compute_reward(X_new[t, 0:state_dim, None].transpose(), 0.0001 * np.eye(state_dim))[0]
         if t == T: print('On this episode, on the planning horizon, PILCO reward was: ', cur_rew)
     print('On this episode PILCO reward was ', cur_rew)
 

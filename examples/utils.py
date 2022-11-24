@@ -1,26 +1,20 @@
-import time
 import numpy as np
 from gpflow import config
 from gym import make
 float_type = config.default_float()
 
-import pygame
-display = pygame.display.set_mode((480, 480))
 
 def rollout(env, pilco, timesteps, verbose=True, random=False, SUBS=1, render=False):
-        X = []; Y = []
-        x, _ = env.reset()
+        X = []
+        Y = []
+        x = env.reset()
         ep_return_full = 0
         ep_return_sampled = 0
         for timestep in range(timesteps):
-            if render:
-                img = env.render()
-                surf = pygame.surfarray.make_surface(np.transpose(img, [1, 0, 2]))
-                display.blit(surf, (0, 0))
-                pygame.display.update()
+            if render: env.render()
             u = policy(env, pilco, x, random)
             for i in range(SUBS):
-                x_new, r, done, _, __ = env.step(u)
+                x_new, r, done, _ = env.step(u)
                 ep_return_full += r
                 if done: break
                 if render: env.render()
@@ -33,7 +27,6 @@ def rollout(env, pilco, timesteps, verbose=True, random=False, SUBS=1, render=Fa
             ep_return_sampled += r
             x = x_new
             if done: break
-        env.close()
         return np.stack(X), np.stack(Y), ep_return_sampled, ep_return_full
 
 

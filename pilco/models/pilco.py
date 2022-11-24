@@ -67,7 +67,7 @@ class PILCO(gpflow.models.BayesianModel):
             noises['GP' + str(i)] = np.array([model.likelihood.variance.numpy()])
             i += 1
         print('-----Learned models------')
-        pd.set_option('display.precision', 3)
+        pd.set_option('precision', 3)
         print('---Lengthscales---')
         print(pd.DataFrame(data=lengthscales))
         print('---Variances---')

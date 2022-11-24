@@ -28,17 +28,17 @@ class DoublePendWrapper():
         return s_new
 
     def step(self, action):
-        ob, r, done, _, __ = self.env.step(action)
+        ob, r, done, _ = self.env.step(action)
         if np.abs(ob[0])> 0.90 or np.abs(ob[-3]) > 0.15 or  np.abs(ob[-2]) > 0.15 or np.abs(ob[-1]) > 0.15:
             done = True
-        return self.state_trans(ob), r, done, _, __
+        return self.state_trans(ob), r, done, {}
 
     def reset(self):
         ob, _ =  self.env.reset()
-        return (self.state_trans(ob), _)
+        return self.state_trans(ob)
 
     def render(self):
-        return self.env.render()
+        self.env.render()
 
     def close(self):
         return self.env.close()
