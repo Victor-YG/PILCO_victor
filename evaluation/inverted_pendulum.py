@@ -1,47 +1,92 @@
-import gym
+import os
+import pickle
+import argparse
 import numpy as np
-import tensorflow as tf
-from gpflow import set_trainable
+import matplotlib.pyplot as pp
 
+import gym
+import gpflow
+from gpflow import set_trainable
+import tensorflow as tf
+
+from eval_utils import rollout, policy
 from pilco.models import PILCO
 from pilco.controllers import RbfController, LinearController
 from pilco.rewards import ExponentialReward
 
-# from tensorflow import logging
+
 np.random.seed(0)
 
-from utils import rollout, policy
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--expert", help="Path to saved expert controller.", default=None, required=False)
+    parser.add_argument("--output", help="Path to save output results.", default="./inverted_pendulum", required=False)
+    parser.add_argument("--timestep", help="Num of timestep in rollout", type=int, default=100, required=False)
+    parser.add_argument("--horizon", help="Planning horizon.", default=10, required=False)
+    parser.add_argument("--iterations", help="Num of iteration to train model.", type=int, default=5, required=False)
+    parser.add_argument("-save_expert", help="Whether to save the trained controller.", action="store_true", required=False)
+    args = parser.parse_args()
 
-env = gym.make('InvertedPendulum-v4', render_mode="rgb_array")
+    # create environment
+    env = gym.make('InvertedPendulum-v2')
 
-# Initial random rollouts to generate a dataset
-X,Y, _, _ = rollout(env=env, pilco=None, random=True, timesteps=40, render=True)
-for i in range(1,5):
-    X_, Y_, _, _ = rollout(env=env, pilco=None, random=True,  timesteps=40, render=True)
-    X = np.vstack((X, X_))
-    Y = np.vstack((Y, Y_))
+    # initial rollout for setup dataset
+    X, Y, _, __ = rollout(env=env, pilco=None, random=True, timesteps=10, render=True)
+
+    # create controller
+    state_dim   = Y.shape[1]
+    control_dim = X.shape[1] - state_dim
+    controller  = RbfController(state_dim=state_dim, control_dim=control_dim, num_basis_functions=10)
+
+    # load expert controller
+    expert_controller = None
+    if args.expert is not None and os.path.exists(args.expert):
+        with open(args.expert, "rb") as f:
+            expert_controller = pickle.load(f)
+
+    # create pilco
+    pilco = PILCO((X, Y), controller=controller, horizon=40, expert=expert_controller)
+
+    # training
+    rewards = []
+    returns = []
+    for i in range(args.iterations):
+        print("---------------- Iteration {} ----------------".format(i + 1))
+
+        # sample data
+        X_new, Y_new, sampled_return, full_return = rollout(env=env, pilco=pilco, timesteps=args.timestep, render=True)
+        returns.append(full_return)
+
+        # update dataset
+        X = np.vstack((X, X_new))
+        Y = np.vstack((Y, Y_new))
+        pilco.mgpr.set_data((X, Y))
+
+        # train model
+        pilco.optimize_models()
+        reward = pilco.optimize_policy()
+        rewards.append(reward.numpy().reshape(1, ))
+
+    # create output folder
+    if not os.path.exists(args.output):
+           os.mkdir(args.output)
+
+    # plot return and reward over time
+    figure, axis = pp.subplots(2)
+    axis[0].plot(range(args.iterations), rewards)
+    axis[0].set_ylabel("rewards")
+    axis[1].plot(range(args.iterations), returns)
+    axis[1].set_xlabel("iterations")
+    axis[1].set_ylabel("returns")
+    pp.show()
+    filepath = os.path.join(args.output, "results{}.png".format("_IL" if args.expert else "_RL"))
+    figure.savefig(filepath)
+
+    # save trained controller
+    if args.save_expert:
+        with open(os.path.join(args.output, "expert_controller.pkl"), "wb") as f:
+            pickle.dump(pilco.controller, f)
 
 
-state_dim = Y.shape[1]
-control_dim = X.shape[1] - state_dim
-controller = RbfController(state_dim=state_dim, control_dim=control_dim, num_basis_functions=10)
-# controller = LinearController(state_dim=state_dim, control_dim=control_dim)
-
-pilco = PILCO((X, Y), controller=controller, horizon=40)
-# Example of user provided reward function, setting a custom target state
-# R = ExponentialReward(state_dim=state_dim, t=np.array([0.1,0,0,0]))
-# pilco = PILCO(X, Y, controller=controller, horizon=40, reward=R)
-
-returns = []
-for rollouts in range(3):
-    pilco.optimize_models()
-    pilco.optimize_policy()
-    # import pdb; pdb.set_trace()
-    X_new, Y_new, sampled_return, full_return = rollout(env=env, pilco=pilco, timesteps=100, render=True)
-    # Update dataset
-    X = np.vstack((X, X_new)); Y = np.vstack((Y, Y_new))
-    pilco.mgpr.set_data((X, Y))
-    returns.append(full_return)
-
-# plot return over time
-
+if __name__ == "__main__":
+    main()

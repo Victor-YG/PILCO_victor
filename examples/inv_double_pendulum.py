@@ -17,7 +17,7 @@ np.random.seed(0)
 
 class DoublePendWrapper():
     def __init__(self):
-        self.env = gym.make('InvertedDoublePendulum-v4', render_mode="rgb_array").env
+        self.env = gym.make('InvertedDoublePendulum-v2').env
         self.action_space = self.env.action_space
         self.observation_space = self.env.observation_space
 
