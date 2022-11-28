@@ -146,7 +146,7 @@ class PILCO(gpflow.models.BayesianModel):
         m_u, s_u, c_xu = self.controller.compute_action(m_x, s_x)
         if self.expert_controller is not None:
             m_e, s_e, c_xe = self.expert_controller.compute_action(m_x, s_x)
-            diff = tf.reduce_sum(tf.subtract( m_e - m_u))
+            diff = tf.reduce_sum(tf.square(tf.subtract(m_e, m_u)), keepdims=True)
 
         m = tf.concat([m_x, m_u], axis=1)
         s1 = tf.concat([s_x, s_x@c_xu], axis=1)
