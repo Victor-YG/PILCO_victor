@@ -10,6 +10,11 @@ f64 = gpflow.utilities.to_default_float
 from .models import MGPR
 float_type = gpflow.config.default_float()
 
+import sys
+sys.path.append("../../spinningup/spinup/utils/")
+from test_policy import *
+
+
 def squash_sin(m, s, max_action=None):
     '''
     Squashing function, passing the controls mean and variance
@@ -127,3 +132,15 @@ class RbfController(MGPR):
             m.Y.assign(self.max_action / 10 * np.random.normal(size=m.data[1].shape))
             mean = 1; sigma = 0.1
             m.kernel.lengthscales.assign(mean + sigma*np.random.normal(size=m.kernel.lengthscales.shape))
+
+class ExpertController():
+    '''
+    An wrapper for trained spinup ppo policy
+    '''
+    def __init__(self, expert_path):
+        _, self.get_action = load_policy_and_env(expert_path)
+
+
+    def compute_action(self, o, unused_1):
+        a = self.get_action(o)
+        return a, None, None

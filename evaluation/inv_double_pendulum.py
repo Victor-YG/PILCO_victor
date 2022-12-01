@@ -56,12 +56,9 @@ class DoublePendWrapper():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--expert", help="Path to saved expert controller.", default=None, required=False)
     parser.add_argument("--output", help="Path to save output results.", default="./inv_double_pendulum", required=False)
     parser.add_argument("--timestep", help="Num of timestep in rollout", type=int, default=100, required=False)
-    parser.add_argument("--horizon", help="Planning horizon.", default=10, required=False)
     parser.add_argument("--iterations", help="Num of iteration to train model.", type=int, default=5, required=False)
-    parser.add_argument("-save_expert", help="Whether to save the trained controller.", action="store_true", required=False)
     args = parser.parse_args()
 
     # local variables
@@ -83,6 +80,10 @@ def main():
     restarts=True
     lens = []
 
+    # create output folder
+    if not os.path.exists(args.output):
+           os.mkdir(args.output)
+
     # create environment
     env = DoublePendWrapper()
 
@@ -92,64 +93,95 @@ def main():
     # create controller
     state_dim   = Y.shape[1]
     control_dim = X.shape[1] - state_dim
-    controller = RbfController(state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
+    controller_RL = RbfController(state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
+    controller_IL = RbfController(state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
 
     # custom reward function
     reward_funcs = ExponentialReward(state_dim=state_dim, t=target, W=weights)
 
-    # load expert controller
-    expert_controller = None
-    if args.expert is not None and os.path.exists(args.expert):
-        with open(args.expert, "rb") as f:
-            expert_controller = pickle.load(f)
-
-    # create pilco
-    pilco = PILCO((X, Y), controller=controller, expert=expert_controller, horizon=T, reward=reward_funcs, m_init=m_init, S_init=S_init)
+    # create pilco without expert
+    pilco_RL = PILCO((X, Y), controller=controller_RL, expert=None, horizon=T, reward=reward_funcs, m_init=m_init, S_init=S_init)
 
     # for numerical stability
-    for model in pilco.mgpr.models:
+    for model in pilco_RL.mgpr.models:
         model.likelihood.variance.assign(0.001)
         set_trainable(model.likelihood.variance, False)
 
-    # training
-    rewards = []
-    returns = []
+    ###########################
+    # training without expert #
+    ###########################
+    rewards_RL = []
+    returns_RL = []
     for i in range(args.iterations):
         print("---------------- Iteration {} ----------------".format(i + 1))
 
         # sample data
-        X_new, Y_new, sampled_return, full_return = rollout(env, pilco, timesteps=args.timestep, verbose=True, SUBS=SUBS, render=True)
-        returns.append(full_return)
+        X_new, Y_new, sampled_return, full_return = rollout(env, pilco_RL, timesteps=args.timestep, verbose=True, SUBS=SUBS, render=True)
+        returns_RL.append(full_return)
 
         # update dataset
         X = np.vstack((X, X_new[:T, :]))
         Y = np.vstack((Y, Y_new[:T, :]))
-        pilco.mgpr.set_data((X, Y))
+        pilco_RL.mgpr.set_data((X, Y))
 
         # train model
-        pilco.optimize_models(maxiter=maxiter, restarts=2)
-        reward = pilco.optimize_policy(maxiter=maxiter, restarts=2)
-        rewards.append(reward.numpy().reshape(1, ))
+        pilco_RL.optimize_models(maxiter=maxiter, restarts=2)
+        reward = pilco_RL.optimize_policy(maxiter=maxiter, restarts=2)
+        rewards_RL.append(reward.numpy().reshape(1, ))
 
-    # create output folder
-    if not os.path.exists(args.output):
-           os.mkdir(args.output)
 
+    ########################
+    # training with expert #
+    ########################
+    # reset dataset
+    X, Y, _, __ = rollout(env=env, pilco=None, random=True, timesteps=10, render=True)
+
+    # create pilco with expert
+    pilco_IL = PILCO((X, Y), controller=controller_IL, expert=pilco_RL.controller, horizon=T, reward=reward_funcs, m_init=m_init, S_init=S_init)
+
+    # for numerical stability
+    for model in pilco_IL.mgpr.models:
+        model.likelihood.variance.assign(0.001)
+        set_trainable(model.likelihood.variance, False)
+
+    # training
+    rewards_IL = []
+    returns_IL = []
+    for i in range(args.iterations):
+        print("---------------- Iteration {} ----------------".format(i + 1))
+
+        # sample data
+        X_new, Y_new, sampled_return, full_return = rollout(env, pilco_IL, timesteps=args.timestep, verbose=True, SUBS=SUBS, render=True)
+        returns_IL.append(full_return)
+
+        # update dataset
+        X = np.vstack((X, X_new[:T, :]))
+        Y = np.vstack((Y, Y_new[:T, :]))
+        pilco_IL.mgpr.set_data((X, Y))
+
+        # train model
+        pilco_IL.optimize_models(maxiter=maxiter, restarts=2)
+        reward = pilco_IL.optimize_policy(maxiter=maxiter, restarts=2)
+        rewards_IL.append(reward.numpy().reshape(1, ))
+
+
+    ##########
+    # result #
+    ##########
     # plot return and reward over time
     figure, axis = pp.subplots(2)
-    axis[0].plot(range(args.iterations), rewards)
     axis[0].set_ylabel("rewards")
-    axis[1].plot(range(args.iterations), returns)
+    axis[0].plot(rewards_RL, label="w/o expert")
+    axis[0].plot(rewards_IL, label="w/ expert")
+    axis[0].legend()
     axis[1].set_xlabel("iterations")
     axis[1].set_ylabel("returns")
-    pp.show()
-    filepath = os.path.join(args.output, "results{}.png".format("_IL" if args.expert else "_RL"))
+    axis[1].plot(returns_RL, label="w/o expert")
+    axis[1].plot(returns_IL, label="w/ expert")
+    axis[1].legend()
+    filepath = os.path.join(args.output, "results.png")
     figure.savefig(filepath)
-
-    # save trained controller
-    if args.save_expert:
-        with open(os.path.join(args.output, "expert_controller.pkl"), "wb") as f:
-            pickle.dump(pilco.controller, f)
+    pp.show()
 
 
 if __name__=='__main__':
