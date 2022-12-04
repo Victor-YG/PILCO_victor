@@ -29,12 +29,11 @@ def rollout(env, pilco, timesteps, verbose=True, random=False, SUBS=1, render=Fa
             if done: break
         return np.stack(X), np.stack(Y), ep_return_sampled, ep_return_full
 
-
 def policy(env, pilco, x, random):
-    if random:
+    if random or pilco is None:
         return env.action_space.sample()
     else:
-        return pilco.compute_action(x[None, :])[0, :]
+        return tf.squeeze(pilco.compute_action(x)[0])
 
 class Normalised_Env():
     def __init__(self, env_id, m, std):

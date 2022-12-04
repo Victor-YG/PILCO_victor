@@ -118,7 +118,7 @@ class PILCO(gpflow.models.BayesianModel):
         return best_reward
 
     def compute_action(self, x_m):
-        return self.controller.compute_action(x_m, tf.zeros([self.state_dim, self.state_dim], float_type))[0]
+        return self.controller.compute_action(x_m[None, 0 : self.state_dim], tf.zeros([self.state_dim, self.state_dim], float_type))
 
     def predict(self, m_x, s_x, n):
         loop_vars = [
@@ -142,11 +142,11 @@ class PILCO(gpflow.models.BayesianModel):
         return m_x, s_x, reward
 
     def propagate(self, m_x, s_x, diff):
-        # diff = tf.zeros([1, 1])
         m_u, s_u, c_xu = self.controller.compute_action(m_x, s_x)
         if self.expert_controller is not None:
-            m_e, s_e, c_xe = self.expert_controller.compute_action(m_x, s_x)
-            diff = tf.reduce_sum(tf.square(tf.subtract(m_e, m_u)), keepdims=True)
+            m_e, _, __ = self.expert_controller.compute_action(m_x, s_x)
+            tf.stop_gradient(m_e)
+            diff = 10 * tf.reduce_sum(tf.square(tf.subtract(m_e, m_u)), keepdims=True)
 
         m = tf.concat([m_x, m_u], axis=1)
         s1 = tf.concat([s_x, s_x@c_xu], axis=1)

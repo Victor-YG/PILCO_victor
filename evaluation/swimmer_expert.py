@@ -1,4 +1,5 @@
 import os
+import time
 import pickle
 import argparse
 import numpy as np
@@ -9,12 +10,13 @@ import gpflow
 from gpflow import set_trainable
 import tensorflow as tf
 
-from eval_utils import rollout, policy
+from eval_utils import rollout, policy, rollout_with_expert
 from pilco.models import PILCO
-from pilco.controllers import RbfController, LinearController, ExpertController
+from pilco.controllers import CustomRbfController, LinearController, ExpertController, RbfController
 from pilco.rewards import LinearReward, ExponentialReward, CombinedRewards
 
 np.random.seed(1)
+tf.compat.v1.enable_eager_execution()
 
 
 def main():
@@ -43,13 +45,20 @@ def main():
     # create environment
     env = gym.make('Swimmer-v2').env
 
+    # load expert controller
+    expert_controller = None
+    if args.expert is not None:
+        print("Loding expert from {}".format(args.expert))
+        expert_controller = ExpertController(os.path.abspath(args.expert))
+
     # initial rollout for setup dataset
-    X, Y, _, __ = rollout(env=env, pilco=None, random=True, timesteps=10, SUBS=SUBS, render=True)
+    X, U, E, Y, _, __ = rollout_with_expert(env=env, pilco=None, expert=expert_controller, random=True, timesteps=args.timestep, SUBS=SUBS, render=True)
 
     # create controller
-    state_dim   = Y.shape[1]
-    control_dim = X.shape[1] - state_dim
-    controller = RbfController(state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
+    if expert_controller is not None:
+        controller = CustomRbfController(X, E, state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
+    else:
+        controller = RbfController(state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
 
     # custom reward function
     # states:
@@ -75,15 +84,22 @@ def main():
     reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0, 10.0, 0, 0, 0, 0, 0]) + 1e-6), t=[0, 0,  max_ang, 0, 0, 0, 0, 0]))
     reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0, 10.0, 0, 0, 0, 0, 0]) + 1e-6), t=[0, 0, -max_ang, 0, 0, 0, 0, 0]))
 
-    combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0, -1.0, -1.0, -1.0, -1.0])
+    # encourage turning head
+    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 1.0, 0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
+    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 1.0, 0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
 
-    # load expert controller
-    expert_controller = None
-    if args.expert is not None:
-        expert_controller = ExpertController(os.path.abspath(args.expert))
+    # encourage body
+    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 1.0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
+    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 1.0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
+
+    # encourage turning tail
+    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 0, 1.0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
+    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 0, 1.0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
+
+    combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
 
     # create pilco
-    pilco = PILCO((X, Y), controller=controller, expert=None, horizon=T, reward=combined_reward, m_init=m_init, S_init=S_init)
+    pilco = PILCO((np.hstack((X, U)), Y), controller=controller, expert=None, horizon=T, reward=combined_reward, m_init=m_init, S_init=S_init)
 
     # for numerical stability
     for model in pilco.mgpr.models:
@@ -95,20 +111,32 @@ def main():
     returns = []
     for i in range(args.iterations):
         print("---------------- Iteration {} ----------------".format(i + 1))
+        start_time = time.time()
+
+        # train model
+        pilco.mgpr.set_data((np.hstack((X, U)), Y))
+        pilco.optimize_models(maxiter=maxiter, restarts=1)
+        reward = pilco.optimize_policy(maxiter=maxiter, restarts=1)
+        rewards.append(reward.numpy()[0, 0])
+        end_time = time.time()
+        print("Optimization done in {} seconds.".format(start_time - end_time))
 
         # sample data
-        X_new, Y_new, sampled_return, full_return = rollout(env, pilco, timesteps=args.timestep, SUBS=SUBS, render=True)
+        X_new, U_new, E_new, Y_new, sampled_return, full_return = rollout_with_expert(env, pilco, expert_controller, timesteps=args.timestep, SUBS=SUBS, render=True)
+        if expert_controller is not None: pilco.controller.set_data((X_new, E_new))
         returns.append(full_return)
 
         # update dataset
-        X = np.vstack((X, X_new[:T,:]))
-        Y = np.vstack((Y, Y_new[:T,:]))
-        pilco.mgpr.set_data((X, Y))
+        X = np.vstack((X, X_new))
+        U = np.vstack((U, U_new))
+        E = np.vstack((E, E_new))
+        Y = np.vstack((Y, Y_new))
+        end_time = time.time()
+        print("Iteration {} took {} seconds.".format(i + 1, start_time - end_time))
 
-        # train model
-        pilco.optimize_models(maxiter=maxiter, restarts=2)
-        reward = pilco.optimize_policy(maxiter=maxiter, restarts=2)
-        rewards.append(reward.numpy().reshape(1, ))
+    # final rollout
+    a, b, _, full_return = rollout(env, pilco, timesteps=200, SUBS=SUBS, render=True)
+    print("Final return = {}".format(full_return))
 
     # create output folder
     if not os.path.exists(args.output):
