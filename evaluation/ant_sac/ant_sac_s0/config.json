@@ -1,0 +1,40 @@
+{
+    "ac_kwargs":	{},
+    "actor_critic":	"mlp_actor_critic",
+    "alpha":	0.2,
+    "batch_size":	100,
+    "env_fn":	"<function call_experiment.<locals>.thunk_plus.<locals>.<lambda> at 0x7f4680138ea0>",
+    "epochs":	100,
+    "exp_name":	"Ant_sac",
+    "gamma":	0.999,
+    "logger":	{
+        "<spinup.utils.logx.EpochLogger object at 0x7f467ff98a90>":	{
+            "epoch_dict":	{},
+            "exp_name":	"Ant_sac",
+            "first_row":	true,
+            "log_current_row":	{},
+            "log_headers":	[],
+            "output_dir":	"/home/victor/workspace/courses/CSC2626/spinningup/data/Ant_sac/Ant_sac_s0",
+            "output_file":	{
+                "<_io.TextIOWrapper name='/home/victor/workspace/courses/CSC2626/spinningup/data/Ant_sac/Ant_sac_s0/progress.txt' mode='w' encoding='UTF-8'>":	{
+                    "mode":	"w"
+                }
+            }
+        }
+    },
+    "logger_kwargs":	{
+        "exp_name":	"Ant_sac",
+        "output_dir":	"/home/victor/workspace/courses/CSC2626/spinningup/data/Ant_sac/Ant_sac_s0"
+    },
+    "lr":	0.001,
+    "max_ep_len":	1000,
+    "num_test_episodes":	10,
+    "polyak":	0.995,
+    "replay_size":	1000000,
+    "save_freq":	1,
+    "seed":	0,
+    "start_steps":	10000,
+    "steps_per_epoch":	4000,
+    "update_after":	1000,
+    "update_every":	50
+}

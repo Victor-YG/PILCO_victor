@@ -1,0 +1,41 @@
+{
+    "ac_kwargs":	{},
+    "act_noise":	0.1,
+    "actor_critic":	"mlp_actor_critic",
+    "batch_size":	100,
+    "env_fn":	"<function call_experiment.<locals>.thunk_plus.<locals>.<lambda> at 0x7f6d0fac5ae8>",
+    "epochs":	100,
+    "exp_name":	"cheetah_ddpg",
+    "gamma":	0.999,
+    "logger":	{
+        "<spinup.utils.logx.EpochLogger object at 0x7f6d0fb99358>":	{
+            "epoch_dict":	{},
+            "exp_name":	"cheetah_ddpg",
+            "first_row":	true,
+            "log_current_row":	{},
+            "log_headers":	[],
+            "output_dir":	"/home/victor/workspace/courses/CSC2626/spinningup/data/cheetah_ddpg/cheetah_ddpg_s0",
+            "output_file":	{
+                "<_io.TextIOWrapper name='/home/victor/workspace/courses/CSC2626/spinningup/data/cheetah_ddpg/cheetah_ddpg_s0/progress.txt' mode='w' encoding='UTF-8'>":	{
+                    "mode":	"w"
+                }
+            }
+        }
+    },
+    "logger_kwargs":	{
+        "exp_name":	"cheetah_ddpg",
+        "output_dir":	"/home/victor/workspace/courses/CSC2626/spinningup/data/cheetah_ddpg/cheetah_ddpg_s0"
+    },
+    "max_ep_len":	1000,
+    "num_test_episodes":	10,
+    "pi_lr":	0.001,
+    "polyak":	0.995,
+    "q_lr":	0.001,
+    "replay_size":	1000000,
+    "save_freq":	1,
+    "seed":	0,
+    "start_steps":	10000,
+    "steps_per_epoch":	4000,
+    "update_after":	1000,
+    "update_every":	50
+}
