@@ -35,7 +35,6 @@ def main():
     max_action = 1.0
     m_init = np.reshape(np.zeros(state_dim), (1, state_dim))  # initial state mean
     S_init = 0.005 * np.eye(state_dim)
-    T = 15
     bf = 40
 
     # create output folder
@@ -75,6 +74,7 @@ def main():
 
     # encourage speed to the right
     reward_funcs.append(LinearReward(state_dim, [0, 0, 0, 10.0, 0, 0, 0, 0]))
+    # combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0])
 
     # dicourages second rotor from hitting the max angles
     reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 10.0, 0, 0, 0, 0, 0, 0]) + 1e-6), t=[0,  max_ang, 0, 0, 0, 0, 0, 0]))
@@ -99,7 +99,7 @@ def main():
     combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
 
     # create pilco
-    pilco = PILCO((np.hstack((X, U)), Y), controller=controller, expert=None, horizon=T, reward=combined_reward, m_init=m_init, S_init=S_init)
+    pilco = PILCO((np.hstack((X, U)), Y), controller=controller, horizon=30, reward=combined_reward, m_init=m_init, S_init=S_init)
 
     # for numerical stability
     for model in pilco.mgpr.models:
@@ -113,29 +113,22 @@ def main():
         print("---------------- Iteration {} ----------------".format(i + 1))
         start_time = time.time()
 
+        # sample data
+        X, U, E, Y, sampled_return, full_return = rollout_with_expert(env, pilco, expert_controller, timesteps=args.timestep, SUBS=SUBS, render=True)
+        if expert_controller is not None: pilco.controller.set_data((X, E))
+        returns.append(full_return)
+
         # train model
         pilco.mgpr.set_data((np.hstack((X, U)), Y))
         pilco.optimize_models(maxiter=maxiter, restarts=1)
         reward = pilco.optimize_policy(maxiter=maxiter, restarts=1)
         rewards.append(reward.numpy()[0, 0])
         end_time = time.time()
-        print("Optimization done in {} seconds.".format(start_time - end_time))
-
-        # sample data
-        X_new, U_new, E_new, Y_new, sampled_return, full_return = rollout_with_expert(env, pilco, expert_controller, timesteps=args.timestep, SUBS=SUBS, render=True)
-        if expert_controller is not None: pilco.controller.set_data((X_new, E_new))
-        returns.append(full_return)
-
-        # update dataset
-        X = np.vstack((X, X_new))
-        U = np.vstack((U, U_new))
-        E = np.vstack((E, E_new))
-        Y = np.vstack((Y, Y_new))
-        end_time = time.time()
-        print("Iteration {} took {} seconds.".format(i + 1, start_time - end_time))
+        print("Iteration {} took {} seconds.".format(i + 1, end_time - start_time))
 
     # final rollout
     a, b, _, full_return = rollout(env, pilco, timesteps=200, SUBS=SUBS, render=True)
+    returns.append(full_return)
     print("Final return = {}".format(full_return))
 
     # create output folder

@@ -51,28 +51,32 @@ def main():
         expert_controller = ExpertController(os.path.abspath(args.expert))
 
     # initial rollout for setup dataset
-    T = args.timestep
-    X = []
-    U = []
-    E = []
-    Y = []
-    while(T > 0):
-        X_tmp, U_tmp, E_tmp, Y_tmp, _, __ = rollout_with_expert(env=env, pilco=None, expert=expert_controller, random=True, timesteps=args.timestep, SUBS=SUBS, render=True)
-        X_tmp = X_tmp[:, 0 : state_dim]
-        Y_tmp = Y_tmp[:, 0 : state_dim]
-        X.append(X_tmp)
-        U.append(U_tmp)
-        E.append(E_tmp)
-        Y.append(Y_tmp)
-        T = T - X_tmp.shape[0]
-    X = np.vstack(X)
-    X = X[0 : args.timestep, 0 : state_dim]
-    U = np.vstack(U)
-    U = U[0 : args.timestep, :]
-    E = np.vstack(E)
-    E = E[0 : args.timestep, :]
-    Y = np.vstack(Y)
-    Y = Y[0 : args.timestep, 0 : state_dim]
+    X, U, E, Y, _, __ = rollout_with_expert(env=env, pilco=None, expert=expert_controller, random=True, timesteps=args.timestep, SUBS=SUBS, render=True)
+    X = X[:, 0 : state_dim]
+    Y = Y[:, 0 : state_dim]
+
+    # T = args.timestep
+    # X = []
+    # U = []
+    # E = []
+    # Y = []
+    # while(T > 0):
+    #     X_tmp, U_tmp, E_tmp, Y_tmp, _, __ = rollout_with_expert(env=env, pilco=None, expert=expert_controller, random=True, timesteps=args.timestep, SUBS=SUBS, render=True)
+    #     X_tmp = X_tmp[:, 0 : state_dim]
+    #     Y_tmp = Y_tmp[:, 0 : state_dim]
+    #     X.append(X_tmp)
+    #     U.append(U_tmp)
+    #     E.append(E_tmp)
+    #     Y.append(Y_tmp)
+    #     T = T - X_tmp.shape[0]
+    # X = np.vstack(X)
+    # X = X[0 : args.timestep, 0 : state_dim]
+    # U = np.vstack(U)
+    # U = U[0 : args.timestep, :]
+    # E = np.vstack(E)
+    # E = E[0 : args.timestep, :]
+    # Y = np.vstack(Y)
+    # Y = Y[0 : args.timestep, 0 : state_dim]
 
     # create controller
     if expert_controller is not None:
@@ -89,10 +93,16 @@ def main():
 
     # encourage speed to the right
     reward_funcs.append(LinearReward(state_dim, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))
-    combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0])
+    # combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0])
+
+    # encourage staying above ground
+    reward_funcs.append(ExponentialReward(state_dim,
+        W=np.diag(np.array([10.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) + 1e-6),
+        t=[0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))
+    combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0, 10.0])
 
     # create pilco
-    pilco = PILCO((np.hstack((X, U)), Y), controller=controller, expert=None, horizon=T, reward=combined_reward, m_init=m_init, S_init=S_init)
+    pilco = PILCO((np.hstack((X, U)), Y), controller=controller, horizon=30, reward=combined_reward, m_init=m_init, S_init=S_init)
 
     # for numerical stability
     for model in pilco.mgpr.models:
@@ -106,29 +116,24 @@ def main():
         print("---------------- Iteration {} ----------------".format(i + 1))
         start_time = time.time()
 
+        # sample data
+        X, U, E, Y, sampled_return, full_return = rollout_with_expert(env, pilco, expert_controller, timesteps=args.timestep, SUBS=SUBS, render=True)
+        X = X[:, 0 : state_dim]
+        Y = Y[:, 0 : state_dim]
+        # if expert_controller is not None: pilco.controller.set_data((X, E))
+        returns.append(full_return)
+
         # train model
         pilco.mgpr.set_data((np.hstack((X, U)), Y))
         pilco.optimize_models(maxiter=maxiter, restarts=1)
         reward = pilco.optimize_policy(maxiter=maxiter, restarts=1)
-        rewards.append(reward.numpy()[0])
+        rewards.append(reward.numpy()[0, 0])
         end_time = time.time()
-        print("Optimization done in {} seconds.".format(start_time - end_time))
-
-        # sample data
-        X_new, U_new, E_new, Y_new, sampled_return, full_return = rollout_with_expert(env, pilco, expert_controller, timesteps=args.timestep, SUBS=SUBS, render=True)
-        # if expert_controller is not None: pilco.controller.set_data((X_new, E_new))
-        returns.append(full_return)
-
-        # update dataset
-        X = np.vstack((X, X_new[:, 0 : state_dim]))
-        U = np.vstack((U, U_new[:, 0 : state_dim]))
-        E = np.vstack((E, E_new[:, 0 : state_dim]))
-        Y = np.vstack((Y, Y_new[:, 0 : state_dim]))
-        end_time = time.time()
-        print("Iteration {} took {} seconds.".format(i + 1, start_time - end_time))
+        print("Iteration {} took {} seconds.".format(i + 1, end_time - start_time))
 
     # final rollout
     a, b, _, full_return = rollout(env, pilco, timesteps=200, SUBS=SUBS, render=True)
+    returns.append(full_return)
     print("Final return = {}".format(full_return))
 
     # create output folder

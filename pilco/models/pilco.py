@@ -125,29 +125,23 @@ class PILCO(gpflow.models.BayesianModel):
             tf.constant(0, tf.int32),
             m_x,
             s_x,
-            tf.constant([[0]], float_type),
             tf.constant([[0]], float_type)
         ]
 
-        _, m_x, s_x, diff, reward = tf.while_loop(
+        _, m_x, s_x, reward = tf.while_loop(
             # Termination condition
-            lambda j, m_x, s_x, diff, reward: j < n,
+            lambda j, m_x, s_x, reward: j < n,
             # Body function
-            lambda j, m_x, s_x, diff, reward: (
+            lambda j, m_x, s_x, reward: (
                 j + 1,
-                *self.propagate(m_x, s_x, diff),
-                tf.add(reward, self.reward.compute_reward(m_x, s_x, diff)[0])
+                *self.propagate(m_x, s_x),
+                tf.add(reward, self.reward.compute_reward(m_x, s_x)[0])
             ), loop_vars
         )
         return m_x, s_x, reward
 
-    def propagate(self, m_x, s_x, diff):
+    def propagate(self, m_x, s_x):
         m_u, s_u, c_xu = self.controller.compute_action(m_x, s_x)
-        if self.expert_controller is not None:
-            m_e, _, __ = self.expert_controller.compute_action(m_x, s_x)
-            tf.stop_gradient(m_e)
-            diff = 10 * tf.reduce_sum(tf.square(tf.subtract(m_e, m_u)), keepdims=True)
-
         m = tf.concat([m_x, m_u], axis=1)
         s1 = tf.concat([s_x, s_x@c_xu], axis=1)
         s2 = tf.concat([tf.transpose(s_x@c_xu), s_u], axis=1)
@@ -160,7 +154,7 @@ class PILCO(gpflow.models.BayesianModel):
 
         # While-loop requires the shapes of the outputs to be fixed
         M_x.set_shape([1, self.state_dim]); S_x.set_shape([self.state_dim, self.state_dim])
-        return M_x, S_x, diff
+        return M_x, S_x
 
     def compute_reward(self):
         return -self.training_loss()
