@@ -32,7 +32,7 @@ def rollout(env, pilco, timesteps, verbose=False, random=False, SUBS=1, render=F
         return np.stack(X), np.stack(Y), ep_return_sampled, ep_return_full
 
 
-def rollout_with_expert(env, pilco, expert, timesteps, verbose=False, random=False, SUBS=1, render=False):
+def rollout_with_expert(env, pilco, expert, timesteps, verbose=False, demo=False, SUBS=1, render=False):
         X = []
         Y = []
         U = []
@@ -44,11 +44,27 @@ def rollout_with_expert(env, pilco, expert, timesteps, verbose=False, random=Fal
         for timestep in range(timesteps):
             if render: env.render()
 
-            u = policy(env, pilco, x, random)
-            if expert is not None: u_e = expert.compute_action(x)[0]
+            # sample pilco's action
+            if pilco is not None:
+                u = tf.squeeze(pilco.compute_action(x)[0])
+            else:
+                u = env.action_space.sample()
 
+            # sample expert's action
+            if expert is not None:
+                u_e = expert.compute_action(x)[0]
+            else:
+                u_e = np.zeros_like(u)
+
+            # step forward
             for i in range(SUBS):
-                x_new, r, done, _ = env.step(u)
+                if demo == True and expert is not None: # expert demonstration
+                    x_new, r, done, _ = env.step(u_e)
+                elif demo == False and pilco is not None:
+                    x_new, r, done, _ = env.step(u) # agent trial
+                else:
+                    x_new, r, done, _ = env.step(u) # random sampling
+
                 ep_return_full += r
                 if done: break
                 if render: env.render()
@@ -60,12 +76,8 @@ def rollout_with_expert(env, pilco, expert, timesteps, verbose=False, random=Fal
 
             X.append(x)
             U.append(u)
+            E.append(u_e)
             Y.append(x_new - x)
-
-            if expert is not None:
-                E.append(u_e)
-            else:
-                E.append(np.zeros_like(u))
 
             ep_return_sampled += r
             x = x_new

@@ -51,11 +51,14 @@ def main():
         expert_controller = ExpertController(os.path.abspath(args.expert))
 
     # initial rollout for setup dataset
-    X, U, E, Y, _, __ = rollout_with_expert(env=env, pilco=None, expert=expert_controller, random=True, timesteps=args.timestep, SUBS=SUBS, render=True)
+    if expert_controller is not None: demo = True
+    else: demo = False
+    X_e, U_e, E_e, Y_e, _, expert_return = rollout_with_expert(env=env, pilco=None, expert=expert_controller, demo=demo, timesteps=args.timestep, SUBS=SUBS, render=True)
+    print("Expert's return: {}".format(expert_return))
 
     # create controller
     if expert_controller is not None:
-        controller = CustomRbfController(X, E, state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
+        controller = CustomRbfController(np.vstack((X_e, X_e)), np.vstack((E_e, E_e)), state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
     else:
         controller = RbfController(state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
 
@@ -99,7 +102,7 @@ def main():
     combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
 
     # create pilco
-    pilco = PILCO((np.hstack((X, U)), Y), controller=controller, horizon=30, reward=combined_reward, m_init=m_init, S_init=S_init)
+    pilco = PILCO((np.hstack((X_e, U_e)), Y_e), controller=controller, horizon=30, reward=combined_reward, m_init=m_init, S_init=S_init)
 
     # for numerical stability
     for model in pilco.mgpr.models:
@@ -114,20 +117,27 @@ def main():
         start_time = time.time()
 
         # sample data
-        X, U, E, Y, sampled_return, full_return = rollout_with_expert(env, pilco, expert_controller, timesteps=args.timestep, SUBS=SUBS, render=True)
-        if expert_controller is not None: pilco.controller.set_data((X, E))
+        X_p, U_p, E_p, Y_p, sampled_return, full_return = rollout_with_expert(env, pilco, expert_controller, demo=False, timesteps=args.timestep, SUBS=SUBS, render=True)
         returns.append(full_return)
+        X = np.vstack((X_e, X_p))
+        U = np.vstack((U_e, U_p))
+        E = np.vstack((E_e, E_p))
+        Y = np.vstack((Y_e, Y_p))
+
+        # update controller
+        if expert_controller is not None: pilco.controller.set_data((X, E))
 
         # train model
         pilco.mgpr.set_data((np.hstack((X, U)), Y))
         pilco.optimize_models(maxiter=maxiter, restarts=1)
         reward = pilco.optimize_policy(maxiter=maxiter, restarts=1)
         rewards.append(reward.numpy()[0, 0])
+
         end_time = time.time()
         print("Iteration {} took {} seconds.".format(i + 1, end_time - start_time))
 
     # final rollout
-    a, b, _, full_return = rollout(env, pilco, timesteps=200, SUBS=SUBS, render=True)
+    a, b, _, full_return = rollout(env, pilco, timesteps=args.timestep, SUBS=SUBS, render=True)
     returns.append(full_return)
     print("Final return = {}".format(full_return))
 
@@ -149,6 +159,9 @@ def main():
     pp.show()
     filepath = os.path.join(args.output, "results{}.png".format("_IL" if args.expert else ""))
     figure.savefig(filepath)
+
+    # fina demo
+    rollout(env, pilco, timesteps=200, SUBS=SUBS, render=True)
 
 
 if __name__ == "__main__":
