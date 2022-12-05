@@ -131,7 +131,7 @@ def main():
     figure, axis = pp.subplots(2)
     axis[0].plot(range(args.iterations), rewards)
     axis[0].set_ylabel("rewards")
-    axis[1].plot(range(args.iterations), returns)
+    axis[1].plot(range(args.iterations), returns[1:])
     axis[1].set_xlabel("iterations")
     axis[1].set_ylabel("returns")
     pp.show()
