@@ -30,7 +30,7 @@ def main():
     # local variables
     state_dim = 8
     control_dim = 2
-    SUBS = 5
+    SUBS = 1
     maxiter = 80
     max_action = 1.0
     m_init = np.reshape(np.zeros(state_dim), (1, state_dim))  # initial state mean

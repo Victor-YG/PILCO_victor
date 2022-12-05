@@ -30,7 +30,7 @@ def main():
     # local variables
     state_dim = 17
     control_dim = 6
-    SUBS = 5
+    SUBS = 1
     maxiter = 80
     max_action = 1.0
     m_init = np.reshape(np.zeros(state_dim), (1, state_dim))  # initial state mean
@@ -116,7 +116,8 @@ def main():
         print("Iteration {} took {} seconds.".format(i + 1, end_time - start_time))
 
     # final rollout
-    a, b, _, full_return = rollout(env, pilco, timesteps=200, SUBS=SUBS, render=True)
+    a, b, _, full_return = rollout(env, pilco, timesteps=args.timestep, SUBS=SUBS, render=True)
+    returns.append(full_return)
     print("Final return = {}".format(full_return))
 
     # create output folder
