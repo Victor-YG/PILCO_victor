@@ -36,6 +36,7 @@ def main():
     m_init = np.reshape(np.zeros(state_dim), (1, state_dim))  # initial state mean
     S_init = 0.005 * np.eye(state_dim)
     bf = 40
+    T = args.timestep
 
     # create output folder
     if not os.path.exists(args.output):
@@ -53,8 +54,12 @@ def main():
     # initial rollout for setup dataset
     if expert_controller is not None: demo = True
     else: demo = False
-    X_e, U_e, E_e, Y_e, _, expert_return = rollout_with_expert(env=env, pilco=None, expert=expert_controller, demo=demo, timesteps=args.timestep, SUBS=SUBS, render=True)
+    X_e, U_e, E_e, Y_e, _, expert_return = rollout_with_expert(env=env, pilco=None, expert=expert_controller, demo=demo, timesteps=200, SUBS=SUBS, render=True)
     print("Expert's return: {}".format(expert_return))
+    X_e = X_e[0 : T, :]
+    U_e = U_e[0 : T, :]
+    E_e = E_e[0 : T, :]
+    Y_e = Y_e[0 : T, :]
 
     # create controller
     if expert_controller is not None:
@@ -111,8 +116,8 @@ def main():
         start_time = time.time()
 
         # sample data
-        X_p, U_p, E_p, Y_p, sampled_return, full_return = rollout_with_expert(env, pilco, expert_controller, demo=False, timesteps=args.timestep, SUBS=SUBS, render=True)
-        returns.append(full_return)
+        print("sampling...")
+        X_p, U_p, E_p, Y_p, sampled_return, full_return = rollout_with_expert(env, pilco, expert_controller, demo=False, timesteps=T, SUBS=SUBS, render=True)
         X = np.vstack((X_e, X_p))
         U = np.vstack((U_e, U_p))
         E = np.vstack((E_e, E_p))
@@ -122,18 +127,19 @@ def main():
         if expert_controller is not None: pilco.controller.set_data((X, E))
 
         # train model
+        print("training...")
         pilco.mgpr.set_data((np.hstack((X, U)), Y))
         pilco.optimize_models(maxiter=maxiter, restarts=1)
         reward = pilco.optimize_policy(maxiter=maxiter, restarts=1)
         rewards.append(reward.numpy()[0, 0])
 
+        # evaluate
+        print("evaluating...")
+        a, b, c, full_return = rollout(env, pilco, timesteps=200, SUBS=SUBS, render=True)
+        returns.append(full_return)
+
         end_time = time.time()
         print("Iteration {} took {} seconds.".format(i + 1, end_time - start_time))
-
-    # final rollout
-    a, b, _, full_return = rollout(env, pilco, timesteps=args.timestep, SUBS=SUBS, render=True)
-    returns.append(full_return)
-    print("Final return = {}".format(full_return))
 
     # create output folder
     if not os.path.exists(args.output):
@@ -147,7 +153,7 @@ def main():
     figure, axis = pp.subplots(2)
     axis[0].plot(range(args.iterations), rewards)
     axis[0].set_ylabel("rewards")
-    axis[1].plot(range(args.iterations), returns[1:])
+    axis[1].plot(range(args.iterations), returns)
     axis[1].set_xlabel("iterations")
     axis[1].set_ylabel("returns")
     pp.show()
