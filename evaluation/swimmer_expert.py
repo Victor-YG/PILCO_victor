@@ -16,6 +16,7 @@ from pilco.controllers import CustomRbfController, LinearController, ExpertContr
 from pilco.rewards import LinearReward, ExponentialReward, CombinedRewards
 
 np.random.seed(1)
+tf.random.set_seed(1)
 tf.compat.v1.enable_eager_execution()
 
 
@@ -44,6 +45,7 @@ def main():
 
     # create environment
     env = gym.make('Swimmer-v2').env
+    env.seed(1)
 
     # load expert controller
     expert_controller = None
