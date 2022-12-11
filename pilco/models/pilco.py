@@ -4,6 +4,8 @@ import gpflow
 import pandas as pd
 import time
 
+from torch import dtype
+
 from .mgpr import MGPR
 from .smgpr import SMGPR
 from .. import controllers
@@ -13,15 +15,15 @@ float_type = gpflow.config.default_float()
 from gpflow import set_trainable
 
 class PILCO(gpflow.models.BayesianModel):
-    def __init__(self, data, num_induced_points=None, horizon=30, controller=None,
-                reward=None, m_init=None, S_init=None, name=None, expert=None):
+    def __init__(self, model_data, policy_data, num_induced_points=None, horizon=30, controller=None,
+                reward=None, m_init=None, S_init=None, name=None):
         super(PILCO, self).__init__(name)
         if num_induced_points is None:
-            self.mgpr = MGPR(data)
+            self.mgpr = MGPR(model_data)
         else:
-            self.mgpr = SMGPR(data, num_induced_points)
-        self.state_dim = data[1].shape[1]
-        self.control_dim = data[0].shape[1] - data[1].shape[1]
+            self.mgpr = SMGPR(model_data, num_induced_points)
+        self.state_dim = model_data[1].shape[1]
+        self.control_dim = model_data[0].shape[1] - model_data[1].shape[1]
         self.horizon = horizon
 
         if controller is None:
@@ -30,7 +32,11 @@ class PILCO(gpflow.models.BayesianModel):
             self.controller = controller
 
         # set expert
-        self.expert_controller = expert
+        self.expert_controller = MGPR(policy_data)
+        self.expert_controller.optimize()
+        expert_params = self.expert_controller.trainable_parameters
+        for param in expert_params:
+            set_trainable(param, False)
 
         if reward is None:
             self.reward = rewards.ExponentialReward(self.state_dim)
@@ -40,7 +46,7 @@ class PILCO(gpflow.models.BayesianModel):
         if m_init is None or S_init is None:
             # If the user has not provided an initial state for the rollouts,
             # then define it as the first state in the dataset.
-            self.m_init = data[0][0:1, 0:self.state_dim]
+            self.m_init = model_data[0][0:1, 0:self.state_dim]
             self.S_init = np.diag(np.ones(self.state_dim) * 0.1)
         else:
             self.m_init = m_init
@@ -118,7 +124,9 @@ class PILCO(gpflow.models.BayesianModel):
         return best_reward
 
     def compute_action(self, x_m):
-        return self.controller.compute_action(x_m[None, 0 : self.state_dim], tf.zeros([self.state_dim, self.state_dim], float_type))
+        u_e, _, __ = self.expert_controller.predict_on_noisy_inputs(x_m, self.S_init)
+        u_m, u_s, u_v = self.controller.compute_action(x_m[None, 0 : self.state_dim], tf.zeros([self.state_dim, self.state_dim], float_type))
+        return u_m + u_e, u_s, u_v
 
     def predict(self, m_x, s_x, n):
         loop_vars = [
@@ -142,6 +150,8 @@ class PILCO(gpflow.models.BayesianModel):
 
     def propagate(self, m_x, s_x):
         m_u, s_u, c_xu = self.controller.compute_action(m_x, s_x)
+        m_u_e, _, __ = self.expert_controller.predict_on_noisy_inputs(m_x, s_x)
+        m_u += m_u_e
         m = tf.concat([m_x, m_u], axis=1)
         s1 = tf.concat([s_x, s_x@c_xu], axis=1)
         s2 = tf.concat([tf.transpose(s_x@c_xu), s_u], axis=1)

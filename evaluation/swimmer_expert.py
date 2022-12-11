@@ -9,6 +9,7 @@ import gym
 import gpflow
 from gpflow import set_trainable
 import tensorflow as tf
+from torch import dtype, float64
 
 from eval_utils import rollout, policy, rollout_with_expert
 from pilco.models import PILCO
@@ -56,18 +57,20 @@ def main():
     # initial rollout for setup dataset
     if expert_controller is not None: demo = True
     else: demo = False
-    X_e, U_e, E_e, Y_e, _, expert_return = rollout_with_expert(env=env, pilco=None, expert=expert_controller, demo=demo, timesteps=200, SUBS=SUBS, render=True)
+    X_e, U_e, E_e, Y_e, _, expert_return = rollout_with_expert(env=env, pilco=None, expert=expert_controller, demo=demo, timesteps=1000, SUBS=SUBS, render=True)
     print("Expert's return: {}".format(expert_return))
     X_e = X_e[0 : T, :]
     U_e = U_e[0 : T, :]
-    E_e = E_e[0 : T, :]
+    E_e = E_e[0 : T, :].astype(dtype=np.double)
     Y_e = Y_e[0 : T, :]
 
     # create controller
-    if expert_controller is not None:
-        controller = CustomRbfController(np.vstack((X_e, X_e)), np.vstack((E_e, E_e)), state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
-    else:
-        controller = RbfController(state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
+    controller = RbfController(state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
+
+    # if expert_controller is not None:
+    #     controller = CustomRbfController(np.vstack((X_e, X_e)), np.vstack((E_e, E_e)), state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
+    # else:
+    #     controller = RbfController(state_dim=state_dim, control_dim=control_dim, num_basis_functions=bf, max_action=max_action)
 
     # custom reward function
     # states:
@@ -84,32 +87,33 @@ def main():
 
     # encourage speed to the right
     reward_funcs.append(LinearReward(state_dim, [0, 0, 0, 10.0, 0, 0, 0, 0]))
-    # combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0])
+    combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0])
 
-    # dicourages second rotor from hitting the max angles
-    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 10.0, 0, 0, 0, 0, 0, 0]) + 1e-6), t=[0,  max_ang, 0, 0, 0, 0, 0, 0]))
-    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 10.0, 0, 0, 0, 0, 0, 0]) + 1e-6), t=[0, -max_ang, 0, 0, 0, 0, 0, 0]))
+    # # dicourages second rotor from hitting the max angles
+    # reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 10.0, 0, 0, 0, 0, 0, 0]) + 1e-6), t=[0,  max_ang, 0, 0, 0, 0, 0, 0]))
+    # reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 10.0, 0, 0, 0, 0, 0, 0]) + 1e-6), t=[0, -max_ang, 0, 0, 0, 0, 0, 0]))
 
-    # dicourages third rotor from hitting the max angles
-    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0, 10.0, 0, 0, 0, 0, 0]) + 1e-6), t=[0, 0,  max_ang, 0, 0, 0, 0, 0]))
-    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0, 10.0, 0, 0, 0, 0, 0]) + 1e-6), t=[0, 0, -max_ang, 0, 0, 0, 0, 0]))
+    # # dicourages third rotor from hitting the max angles
+    # reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0, 10.0, 0, 0, 0, 0, 0]) + 1e-6), t=[0, 0,  max_ang, 0, 0, 0, 0, 0]))
+    # reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0, 10.0, 0, 0, 0, 0, 0]) + 1e-6), t=[0, 0, -max_ang, 0, 0, 0, 0, 0]))
 
-    # encourage turning head
-    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 1.0, 0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
-    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 1.0, 0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
+    # # encourage turning head
+    # reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 1.0, 0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
+    # reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 1.0, 0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
 
-    # encourage body
-    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 1.0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
-    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 1.0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
+    # # encourage body
+    # reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 1.0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
+    # reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 1.0, 0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
 
-    # encourage turning tail
-    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 0, 1.0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
-    reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 0, 1.0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
+    # # encourage turning tail
+    # reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 0, 1.0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
+    # reward_funcs.append(ExponentialReward(state_dim, W=np.diag(np.array([0, 0.0, 0, 0, 0, 0, 0, 1.0]) + 1e-6), t=[0, 0, 0, 0, 0, 0, 0, 0]))
 
-    combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
+    # combined_reward = CombinedRewards(state_dim, reward_funcs, coefs=[1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0])
 
     # create pilco
-    pilco = PILCO((np.hstack((X_e, U_e)), Y_e), controller=controller, horizon=30, reward=combined_reward, m_init=m_init, S_init=S_init)
+    pilco = PILCO(model_data=(np.hstack((X_e, U_e)), Y_e), policy_data=(X_e, E_e),
+                  controller=controller, horizon=30, reward=combined_reward, m_init=m_init, S_init=S_init)
 
     # for numerical stability
     for model in pilco.mgpr.models:
@@ -132,7 +136,7 @@ def main():
         Y = np.vstack((Y_e, Y_p))
 
         # update controller
-        if expert_controller is not None: pilco.controller.set_data((X, E))
+        # if expert_controller is not None: pilco.controller.set_data((X, E))
 
         # train model
         print("training...")
@@ -143,7 +147,7 @@ def main():
 
         # evaluate
         print("evaluating...")
-        a, b, c, full_return = rollout(env, pilco, timesteps=200, SUBS=SUBS, render=True)
+        a, b, c, full_return = rollout(env, pilco, timesteps=1000, SUBS=SUBS, render=True)
         returns.append(full_return)
 
         end_time = time.time()
@@ -169,7 +173,7 @@ def main():
     figure.savefig(filepath)
 
     # fina demo
-    rollout(env, pilco, timesteps=200, SUBS=SUBS, render=True)
+    rollout(env, pilco, timesteps=1000, SUBS=SUBS, render=True)
 
 
 if __name__ == "__main__":
